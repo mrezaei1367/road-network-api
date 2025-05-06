@@ -1,0 +1,10 @@
+fastapi==0.115.12
+GeoAlchemy2==0.17.1
+passlib==1.7.4
+psycopg2-binary==2.9.10
+python-dateutil==2.9.0.post0
+python-jose==3.4.0
+python-multipart==0.0.20
+shapely==2.1.0
+SQLAlchemy==2.0.40
+uvicorn==0.34.2

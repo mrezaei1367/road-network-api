@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: road_network
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/road_network
+  
+  tests:
+    build:
+      context: .
+      target: test
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/road_network
+    depends_on:
+      - db
+    command: >
+      sh -c "python wait_for_db.py && 
+      pytest -v --cov=app --cov-report=term-missing"
+
+volumes:
+  postgres_data:
