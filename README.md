@@ -13,7 +13,12 @@ A REST API for managing road network data in GeoJSON format with versioning supp
 
 - FastAPI
 - PostgreSQL with PostGIS
-- Docker
+- Docker & Docker Compose
+
+## Prerequisites
+
+- Docker and Docker Compose installed
+- Python 3.12 (optional, for local dev/testing outside Docker)
 
 ## Setup
 
@@ -25,7 +30,7 @@ A REST API for managing road network data in GeoJSON format with versioning supp
 
 After starting the service, visit `http://localhost:8000/docs` for interactive API documentation.
 
-### Endpoints
+## API Endpoints
 
 #### Create Customer
 - `POST /api/customers/`
@@ -35,21 +40,21 @@ After starting the service, visit `http://localhost:8000/docs` for interactive A
 #### Upload Road Network
 - `POST /api/road-networks/`
   - Uploads a new road network
-  - Headers: `X-API-Key: <your_api_key>`
-  - form 'file=@"/file_directory/road_network_bayrischzell_1.0.geojson"'
+  - Headers: `x-api-key: <your_api_key>`
+  - file `file=@/file_directory/road_network_bayrischzell_1.0.geojson`
   
 
 #### Update Road Network
 - `PUT /api/road-networks/{road_network_name}`
   - Updates an existing road network (creates new version)
-  - Headers: `X-API-Key: <your_api_key>`
-  - form 'file=@"/file_directory/road_network_bayrischzell_1.0.geojson"'
+  - Headers: `x-api-key: <your_api_key>`
+  - file `file=@/file_directory/road_network_bayrischzell_1.0.geojson`
 
 
 #### Get Road Network
 - `GET /api/road-networks/{road_network_name}`
   - Retrieves a road network in GeoJSON format
-  - Headers: `X-API-Key: <your_api_key>`
+  - Headers: `x-api-key: <your_api_key>`
   - Optional query parameter: `query_time` (e.g., `?query_time=2025-05-03%2021:44:41`)
 
 ## Data Model
@@ -95,5 +100,5 @@ curl -X GET "http://localhost:8000/api/road-networks/bayrischzell?query_time=202
 ```
 
 ## Test
-For executing the unit tests you just neet to:
+For executing the unit tests you just need to:
 Run `docker-compose up --build tests`
