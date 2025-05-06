@@ -1,10 +1,13 @@
 import io
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi import status
 
+from app.crud import create_road_network
 from app.models import Customer, RoadEdge, RoadNetwork
+from app.schemas import RoadNetworkObject
 
 geojson_content = {
     "type": "FeatureCollection",
@@ -27,6 +30,13 @@ updated_geojson_content = {
         }
     ],
 }
+
+
+@pytest.fixture
+def mock_logger(monkeypatch):
+    logger = MagicMock()
+    monkeypatch.setattr("app.main.logger", logger)
+    return logger
 
 
 # --- POST /api/customers/ ---
@@ -119,3 +129,59 @@ def test_update_network_with_same_version(
         response.json()["detail"]
         == "Road network with this version already exists. Use a different version."
     )
+
+
+# --- GET /api/road-networks/{road_network_name} ---
+def test_get_network(client, db, customer, road_network):
+    response = client.get(
+        "/api/road-networks/testnet", headers={"x-api-key": customer.api_key}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert len(response.json()["features"]) == 1
+    assert response.json()["features"][0]["properties"]["name"] == "Test Road"
+    assert response.json()["features"][0]["geometry"]["coordinates"] == [[0, 0], [1, 1]]
+
+
+def test_get_network_quey_time(client, db, customer, road_network):
+    updated_network_obj = RoadNetworkObject(
+        name="testnet", geojson=updated_geojson_content, version="1.1"
+    )
+    updated_network = create_road_network(db, updated_network_obj, customer.id)
+    response = client.get(
+        "/api/road-networks/testnet?query_time=2025-01-02 10:31:00",
+        headers={"x-api-key": customer.api_key},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert len(response.json()["features"]) == 1
+    assert response.json()["features"][0]["properties"]["name"] == "Test Road"
+    assert response.json()["features"][0]["geometry"]["coordinates"] == [[0, 0], [1, 1]]
+
+
+def test_get_network_not_found(client, db, customer):
+    response = client.get(
+        "/api/road-networks/nonexistent", headers={"x-api-key": customer.api_key}
+    )
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json()["detail"] == "Road network not found"
+
+
+def test_get_network_invalid_api_key(client, db):
+    response = client.get(
+        "/api/road-networks/nonexistent", headers={"x-api-key": "invalid_key"}
+    )
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.json()["detail"] == "Invalid API key"
+
+
+def test_get_network_invalid_query_time(client, customer, mock_logger):
+    response = client.get(
+        "/api/road-networks/testnet?query_time=invalid_time",
+        headers={"x-api-key": customer.api_key},
+    )
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert (
+        response.json()["detail"]
+        == "Invalid query time format. Use standard format like 'YYYY-MM-DD HH:MM:SS'"
+    )
+    assert mock_logger.warning.call_count == 1
+    assert mock_logger.warning.call_args[0][0] == "Invalid query time format: %s"

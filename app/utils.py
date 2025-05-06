@@ -1,10 +1,15 @@
 import json
 import logging
 import re
-from typing import List
+from typing import TYPE_CHECKING, List
 
 from fastapi import HTTPException, status
-from shapely.geometry import shape
+from geoalchemy2.shape import to_shape
+from shapely.geometry import mapping, shape
+
+if TYPE_CHECKING:
+    from .models import RoadEdge
+
 
 logger = logging.getLogger(__name__)
 
@@ -53,3 +58,19 @@ def load_geojson_file(file) -> dict:
             detail="Uploaded file is not a valid GeoJSON file",
         )
     return geojson_data
+
+
+def road_edges_to_geojson(edges: List["RoadEdge"]) -> dict:
+    features = []
+
+    for edge in edges:
+        geom = to_shape(edge.geometry)
+        features.append(
+            {
+                "type": "Feature",
+                "properties": edge.properties,
+                "geometry": mapping(geom),  # Convert Shapely to GeoJSON
+            }
+        )
+
+    return {"type": "FeatureCollection", "features": features}

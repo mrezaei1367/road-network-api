@@ -3,11 +3,11 @@ import secrets
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from . import models, schemas
-from .utils import geojson_to_road_edges
+from .utils import geojson_to_road_edges, road_edges_to_geojson
 
 logger = logging.getLogger(__name__)
 
@@ -99,3 +99,35 @@ def mark_previous_edges_as_old(db: Session, network_id: int) -> None:
         )
     ).update({"is_current": False, "valid_to": datetime.now(timezone.utc)})
     db.commit()
+
+
+def get_edges_for_network(
+    db: Session,
+    network_id: int,
+    query_time: datetime = None,
+) -> dict:
+
+    edges = db.query(models.RoadEdge).filter(models.RoadEdge.network_id == network_id)
+    if query_time:
+        # Get edges valid at the specified time
+        edges = edges.filter(
+            and_(
+                models.RoadEdge.valid_from <= query_time,
+                or_(
+                    models.RoadEdge.valid_to >= query_time,
+                    models.RoadEdge.valid_to.is_(None),
+                ),
+            )
+        ).all()
+    else:
+        edges = edges.filter(models.RoadEdge.is_current == True).all()
+    if not edges:
+        logger.warning(
+            "No edges found for road network %s at time %s", network_id, query_time
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No edges found for the specified road network",
+        )
+
+    return road_edges_to_geojson(edges)

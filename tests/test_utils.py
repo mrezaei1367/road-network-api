@@ -6,7 +6,12 @@ from fastapi import HTTPException
 from geoalchemy2.shape import from_shape
 from shapely.geometry import LineString
 
-from app.utils import extract_network_info, load_geojson_file
+from app.utils import (
+    extract_network_info,
+    geojson_to_road_edges,
+    load_geojson_file,
+    road_edges_to_geojson,
+)
 
 
 class MockRoadEdge:
@@ -57,3 +62,46 @@ def test_load_geojson_file_invalid():
         load_geojson_file(invalid_json)
     assert exc_info.value.status_code == 400
     assert "not a valid GeoJSON file" in exc_info.value.detail
+
+
+def test_geojson_to_road_edges_valid():
+    geojson = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"id": 1},
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[0, 0], [1, 1]],
+                },
+            }
+        ],
+    }
+
+    road_network_id = 123
+    edges = geojson_to_road_edges(geojson, road_network_id)
+    assert len(edges) == 1
+    assert edges[0]["network_id"] == road_network_id
+    assert edges[0]["properties"] == {"id": 1}
+    assert "LINESTRING" in edges[0]["geometry"]
+
+
+def test_geojson_to_road_edges_empty_features():
+    geojson = {"type": "FeatureCollection", "features": []}
+    edges = geojson_to_road_edges(geojson, 1)
+    assert edges == []
+
+
+def test_road_edges_to_geojson():
+    shapely_geom = LineString([(0, 0), (1, 1)])
+    mock_edge = MockRoadEdge(
+        properties={"name": "Test Road"},
+        geometry=from_shape(shapely_geom, srid=4326),
+    )
+    geojson = road_edges_to_geojson([mock_edge])
+    assert geojson["type"] == "FeatureCollection"
+    assert len(geojson["features"]) == 1
+    feature = geojson["features"][0]
+    assert feature["geometry"]["type"] == "LineString"
+    assert feature["properties"]["name"] == "Test Road"

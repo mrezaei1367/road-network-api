@@ -1,4 +1,6 @@
 import logging
+from datetime import datetime
+from typing import Optional
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, status
 from sqlalchemy.exc import IntegrityError
@@ -8,6 +10,7 @@ from .crud import (
     create_customer,
     create_road_network,
     get_customer_by_api_key,
+    get_edges_for_network,
     get_network_by_name_time,
     mark_previous_edges_as_old,
 )
@@ -16,6 +19,7 @@ from .models import Base
 from .schemas import (
     CustomerCreate,
     CustomerResponse,
+    GeoJSONFeatureCollection,
     RoadNetworkObject,
     RoadNetworkResponse,
 )
@@ -120,3 +124,36 @@ def update_network(
         name=road_network_name, geojson=geojson_data, version=version
     )
     return create_road_network(db, road_network, customer.id)
+
+
+@app.get(
+    "/api/road-networks/{road_network_name}",
+    response_model=GeoJSONFeatureCollection,
+    summary="Get a road network by name",
+)
+def get_network(
+    road_network_name: str,
+    query_time: Optional[str] = None,
+    x_api_key: str = Header(...),
+    db: Session = Depends(get_db),
+):
+    customer = get_customer_by_api_key(db, x_api_key)
+    try:
+        query_time = datetime.fromisoformat(query_time) if query_time else None
+    except ValueError:
+        logger.warning("Invalid query time format: %s", query_time)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid query time format. Use standard format like 'YYYY-MM-DD HH:MM:SS'",
+        )
+    road_network = get_network_by_name_time(
+        db, customer.id, road_network_name, query_time
+    )
+    if not road_network:
+        logger.warning(
+            "Road network %s not found for customer %s", road_network_name, customer.id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Road network not found"
+        )
+    return get_edges_for_network(db, road_network.id, query_time)
