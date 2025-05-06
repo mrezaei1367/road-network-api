@@ -1,6 +1,6 @@
 import logging
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_
@@ -90,3 +90,12 @@ def create_customer(
     return schemas.CustomerResponse(
         id=db_customer.id, name=db_customer.name, api_key=db_customer.api_key
     )
+
+
+def mark_previous_edges_as_old(db: Session, network_id: int) -> None:
+    db.query(models.RoadEdge).filter(
+        and_(
+            models.RoadEdge.network_id == network_id, models.RoadEdge.is_current == True
+        )
+    ).update({"is_current": False, "valid_to": datetime.now(timezone.utc)})
+    db.commit()
