@@ -9,7 +9,6 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.schema import Index
 from sqlalchemy.sql import func
 
 from app.database import Base
