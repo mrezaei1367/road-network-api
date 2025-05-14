@@ -4,7 +4,7 @@ import json
 import pytest
 from fastapi import HTTPException
 from geoalchemy2.shape import from_shape
-from shapely.geometry import LineString
+from shapely.geometry import LineString, shape
 
 from app.utils import (
     extract_network_info,
@@ -80,11 +80,12 @@ def test_geojson_to_road_edges_valid():
     }
 
     road_network_id = 123
+    geometry = from_shape(shape(geojson["features"][0]["geometry"]), srid=4326)
     edges = geojson_to_road_edges(geojson, road_network_id)
     assert len(edges) == 1
     assert edges[0]["network_id"] == road_network_id
     assert edges[0]["properties"] == {"id": 1}
-    assert "LINESTRING" in edges[0]["geometry"]
+    assert geometry == edges[0]["geometry"]
 
 
 def test_geojson_to_road_edges_empty_features():

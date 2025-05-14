@@ -45,14 +45,14 @@ After starting the service, visit `http://localhost:8000/docs` for interactive A
   
 
 #### Update Road Network
-- `PUT /api/road-networks/{road_network_name}`
+- `PUT /api/road-networks/{road_network_id}`
   - Updates an existing road network (creates new version)
   - Headers: `x-api-key: <your_api_key>`
   - file `file=@/file_directory/road_network_bayrischzell_1.0.geojson`
 
 
 #### Get Road Network
-- `GET /api/road-networks/{road_network_name}`
+- `GET /api/road-networks/{road_network_id}`
   - Retrieves a road network in GeoJSON format
   - Headers: `x-api-key: <your_api_key>`
   - Optional query parameter: `query_time` (e.g., `?query_time=2025-05-03%2021:44:41`)
@@ -85,14 +85,14 @@ curl -X POST "http://localhost:8000/api/road-networks/" \
 
 3. Update an existing road network
 ```bash
-curl -X PUT "http://localhost:8000/api/road-networks/bayrischzell" \
+curl -X PUT "http://localhost:8000/api/road-networks/1" \
 -H "x-api-key: your_api_key" \
 -F "file=@/Users/user_name/Documents/geo_json_data/road_network_bayrischzell_1.1.geojson"
 ```
 
 4. Get a road network by name or get a specific version of a road network with using a specific time.
 ```bash
-curl -X GET "http://localhost:8000/api/road-networks/bayrischzell" \
+curl -X GET "http://localhost:8000/api/road-networks/1" \
 -H "x-api-key: your_api_key"
 
 curl -X GET "http://localhost:8000/api/road-networks/bayrischzell?query_time=2025-05-05%2021:49:27.51" \

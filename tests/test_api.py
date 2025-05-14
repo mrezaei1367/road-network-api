@@ -4,6 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import status
+from geoalchemy2.shape import to_shape
+from shapely.geometry import mapping
 
 from app.crud import create_road_network
 from app.models import Customer, RoadEdge, RoadNetwork
@@ -25,7 +27,7 @@ updated_geojson_content = {
     "features": [
         {
             "type": "Feature",
-            "properties": {"name": "Updated Test Road"},
+            "properties": {"name": "Test Road"},
             "geometry": {"type": "LineString", "coordinates": [[0, 0], [2, 2]]},
         }
     ],
@@ -74,9 +76,9 @@ def test_upload_network(mock_load_geojson, client, db, customer):
     assert edges[0].properties == {"name": "Test Road"}
 
 
-# --- PUT /api/road-networks/{road_network_name} ---
+# --- PUT /api/road-networks/{road_network_id} ---
 @patch("app.utils.load_geojson_file", return_value=updated_geojson_content)
-def test_update_network(mock_load_geojson, client, db, customer, road_network):
+def test_update_network_new_data(mock_load_geojson, client, db, customer, road_network):
     updated_geojson_file = io.BytesIO(
         json.dumps(updated_geojson_content).encode("utf-8")
     )
@@ -88,7 +90,7 @@ def test_update_network(mock_load_geojson, client, db, customer, road_network):
         )
     }
     response = client.put(
-        "/api/road-networks/testnet",
+        f"/api/road-networks/{road_network.id}",
         headers={"x-api-key": customer.api_key},
         files=files,
     )
@@ -98,7 +100,70 @@ def test_update_network(mock_load_geojson, client, db, customer, road_network):
         .order_by(RoadNetwork.upload_time.desc())
         .first()
     )
-    edges = db.query(RoadEdge).filter(RoadEdge.network_id == updated_network.id).all()
+    edges = (
+        db.query(RoadEdge)
+        .filter(RoadEdge.network_id == updated_network.id)
+        .order_by(RoadEdge.valid_from.desc())
+        .all()
+    )
+    outdate_edge = edges[1]
+    updated_edge = edges[0]
+    geometry_old = mapping(to_shape(outdate_edge.geometry))
+    geometry_new = mapping(to_shape(updated_edge.geometry))
+    assert response.status_code == status.HTTP_200_OK
+    assert updated_network is not None
+    assert response.json()["name"] == updated_network.name
+    assert response.json()["version"] == updated_network.version
+    assert (
+        updated_network.upload_time.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        == response.json()["upload_time"]
+    )
+    assert len(edges) == 2
+    assert updated_edge.properties == {"name": "Test Road"}
+    assert outdate_edge.properties == {"name": "Test Road"}
+    assert geometry_old == {
+        "type": "LineString",
+        "coordinates": ((0.0, 0.0), (1.0, 1.0)),
+    }
+    assert geometry_new == {
+        "type": "LineString",
+        "coordinates": ((0.0, 0.0), (2.0, 2.0)),
+    }
+    assert updated_edge.is_current is True
+    assert outdate_edge.is_current is False
+
+
+@patch("app.utils.load_geojson_file", return_value=geojson_content)
+def test_update_network_same_data(
+    mock_load_geojson, client, db, customer, road_network
+):
+    updated_geojson_file = io.BytesIO(json.dumps(geojson_content).encode("utf-8"))
+    files = {
+        "file": (
+            "road_network_testnet_1.1.geojson",
+            updated_geojson_file,
+            "application/json",
+        )
+    }
+    response = client.put(
+        f"/api/road-networks/{road_network.id}",
+        headers={"x-api-key": customer.api_key},
+        files=files,
+    )
+    updated_network = (
+        db.query(RoadNetwork)
+        .filter(RoadNetwork.name == "testnet")
+        .order_by(RoadNetwork.upload_time.desc())
+        .first()
+    )
+    edges = (
+        db.query(RoadEdge)
+        .filter(RoadEdge.network_id == updated_network.id)
+        .order_by(RoadEdge.valid_from.desc())
+        .all()
+    )
+    existing_edge = edges[0]
+    existing_geometry = mapping(to_shape(existing_edge.geometry))
     assert response.status_code == status.HTTP_200_OK
     assert updated_network is not None
     assert response.json()["name"] == updated_network.name
@@ -108,7 +173,12 @@ def test_update_network(mock_load_geojson, client, db, customer, road_network):
         == response.json()["upload_time"]
     )
     assert len(edges) == 1
-    assert edges[0].properties == {"name": "Updated Test Road"}
+    assert existing_edge.properties == {"name": "Test Road"}
+    assert existing_geometry == {
+        "type": "LineString",
+        "coordinates": ((0.0, 0.0), (1.0, 1.0)),
+    }
+    assert existing_edge.is_current is True
 
 
 @patch("app.utils.load_geojson_file", return_value=geojson_content)
@@ -120,7 +190,7 @@ def test_update_network_with_same_version(
         "file": ("road_network_testnet_1.0.geojson", geojson_file, "application/json")
     }
     response = client.put(
-        "/api/road-networks/testnet",
+        f"/api/road-networks/{road_network.id}",
         headers={"x-api-key": customer.api_key},
         files=files,
     )
@@ -131,10 +201,10 @@ def test_update_network_with_same_version(
     )
 
 
-# --- GET /api/road-networks/{road_network_name} ---
+# --- GET /api/road-networks/{road_network_id} ---
 def test_get_network(client, db, customer, road_network):
     response = client.get(
-        "/api/road-networks/testnet", headers={"x-api-key": customer.api_key}
+        f"/api/road-networks/{road_network.id}", headers={"x-api-key": customer.api_key}
     )
     assert response.status_code == status.HTTP_200_OK
     assert len(response.json()["features"]) == 1
@@ -148,7 +218,7 @@ def test_get_network_quey_time(client, db, customer, road_network):
     )
     updated_network = create_road_network(db, updated_network_obj, customer.id)
     response = client.get(
-        "/api/road-networks/testnet?query_time=2025-01-02 10:31:00",
+        f"/api/road-networks/{road_network.id}?query_time=2025-01-02 10:31:00",
         headers={"x-api-key": customer.api_key},
     )
     assert response.status_code == status.HTTP_200_OK
@@ -159,7 +229,7 @@ def test_get_network_quey_time(client, db, customer, road_network):
 
 def test_get_network_not_found(client, db, customer):
     response = client.get(
-        "/api/road-networks/nonexistent", headers={"x-api-key": customer.api_key}
+        "/api/road-networks/3245", headers={"x-api-key": customer.api_key}
     )
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert response.json()["detail"] == "Road network not found"
@@ -167,15 +237,15 @@ def test_get_network_not_found(client, db, customer):
 
 def test_get_network_invalid_api_key(client, db):
     response = client.get(
-        "/api/road-networks/nonexistent", headers={"x-api-key": "invalid_key"}
+        "/api/road-networks/8796", headers={"x-api-key": "invalid_key"}
     )
     assert response.status_code == status.HTTP_403_FORBIDDEN
     assert response.json()["detail"] == "Invalid API key"
 
 
-def test_get_network_invalid_query_time(client, customer, mock_logger):
+def test_get_network_invalid_query_time(client, customer, road_network, mock_logger):
     response = client.get(
-        "/api/road-networks/testnet?query_time=invalid_time",
+        f"/api/road-networks/{road_network.id}?query_time=invalid_time",
         headers={"x-api-key": customer.api_key},
     )
     assert response.status_code == status.HTTP_400_BAD_REQUEST

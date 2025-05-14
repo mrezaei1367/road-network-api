@@ -1,10 +1,11 @@
 import json
 import logging
 import re
-from typing import TYPE_CHECKING, List
+from datetime import datetime
+from typing import TYPE_CHECKING
 
 from fastapi import HTTPException, status
-from geoalchemy2.shape import to_shape
+from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import mapping, shape
 
 if TYPE_CHECKING:
@@ -14,18 +15,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def geojson_to_road_edges(geojson_data: dict, network_id: int) -> List[dict]:
+def geojson_to_road_edges(geojson_data: dict, network_id: int) -> list[dict]:
     features = geojson_data.get("features", [])
     edges = []
 
     for feature in features:
-        geometry = shape(feature["geometry"])
         properties = feature.get("properties", {})
+        geometry = from_shape(shape(feature["geometry"]), srid=4326)
 
         edge = {
             "network_id": network_id,
             "properties": properties,
-            "geometry": geometry.wkt,
+            "geometry": geometry,
+            "valid_from": datetime.now(),
         }
         edges.append(edge)
 
@@ -60,7 +62,7 @@ def load_geojson_file(file) -> dict:
     return geojson_data
 
 
-def road_edges_to_geojson(edges: List["RoadEdge"]) -> dict:
+def road_edges_to_geojson(edges: list["RoadEdge"]) -> dict:
     features = []
 
     for edge in edges:

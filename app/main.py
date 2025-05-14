@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime
-from typing import Optional
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, status
 from sqlalchemy.exc import IntegrityError
@@ -11,8 +10,9 @@ from .crud import (
     create_road_network,
     get_customer_by_api_key,
     get_edges_for_network,
-    get_network_by_name_time,
-    mark_previous_edges_as_old,
+    get_road_network_by_id,
+    get_road_network_by_name,
+    update_road_network,
 )
 from .database import engine, get_db
 from .models import Base
@@ -23,7 +23,7 @@ from .schemas import (
     RoadNetworkObject,
     RoadNetworkResponse,
 )
-from .utils import extract_network_info, load_geojson_file
+from .utils import extract_network_info, geojson_to_road_edges, load_geojson_file
 
 logger = logging.getLogger(__name__)
 app = FastAPI()
@@ -61,7 +61,7 @@ def upload_network(
     customer = get_customer_by_api_key(db, x_api_key)
     name, version = extract_network_info(file.filename)
 
-    existing_network = get_network_by_name_time(db, customer.id, name)
+    existing_network = get_road_network_by_name(db, customer.id, name)
     if existing_network:
         logger.warning(
             "Road network %s already exists for customer %s", name, customer.id
@@ -76,41 +76,38 @@ def upload_network(
 
 
 @app.put(
-    "/api/road-networks/{road_network_name}",
+    "/api/road-networks/{road_network_id}",
     response_model=RoadNetworkResponse,
     summary="Update an existing road network",
 )
 def update_network(
-    road_network_name: str,
+    road_network_id: int,
     x_api_key: str = Header(...),
     db: Session = Depends(get_db),
     file: UploadFile = File(...),
 ):
     customer = get_customer_by_api_key(db, x_api_key)
     name, version = extract_network_info(file.filename)
-    if name != road_network_name:
+    existing_network = get_road_network_by_id(db, road_network_id, customer.id)
+    if not existing_network:
+        logger.warning("Road network %s not found for customer %s", name, customer.id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Road network not found"
+        )
+    if name != existing_network.name:
         logger.warning(
-            "Road network name in the file (%s) does not match the requested name (%s)",
+            "Road network name in the file (%s) does not match the existing road network name (%s)",
             name,
-            road_network_name,
+            existing_network.name,
         )
         raise HTTPException(
             status_code=400,
             detail="Road network name in the file does not match the requested name",
         )
-
-    existing_network = get_network_by_name_time(db, customer.id, road_network_name)
-    if not existing_network:
-        logger.warning(
-            "Road network %s not found for customer %s", road_network_name, customer.id
-        )
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Road network not found"
-        )
     if existing_network.version == version:
         logger.warning(
             "Road network %s with version %s already exists for customer %s",
-            road_network_name,
+            existing_network.name,
             version,
             customer.id,
         )
@@ -118,22 +115,19 @@ def update_network(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Road network with this version already exists. Use a different version.",
         )
-    mark_previous_edges_as_old(db, existing_network.id)
     geojson_data = load_geojson_file(file.file)
-    road_network = RoadNetworkObject(
-        name=road_network_name, geojson=geojson_data, version=version
-    )
-    return create_road_network(db, road_network, customer.id)
+    edges = geojson_to_road_edges(geojson_data, existing_network.id)
+    return update_road_network(db, existing_network, edges, version)
 
 
 @app.get(
-    "/api/road-networks/{road_network_name}",
+    "/api/road-networks/{road_network_id}",
     response_model=GeoJSONFeatureCollection,
     summary="Get a road network by name",
 )
 def get_network(
-    road_network_name: str,
-    query_time: Optional[str] = None,
+    road_network_id: int,
+    query_time: str | None = None,
     x_api_key: str = Header(...),
     db: Session = Depends(get_db),
 ):
@@ -146,12 +140,10 @@ def get_network(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid query time format. Use standard format like 'YYYY-MM-DD HH:MM:SS'",
         )
-    road_network = get_network_by_name_time(
-        db, customer.id, road_network_name, query_time
-    )
+    road_network = get_road_network_by_id(db, road_network_id, customer.id)
     if not road_network:
         logger.warning(
-            "Road network %s not found for customer %s", road_network_name, customer.id
+            "Road network %d not found for customer %s", road_network_id, customer.id
         )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Road network not found"

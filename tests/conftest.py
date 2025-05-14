@@ -2,6 +2,8 @@ import os
 
 import pytest
 from fastapi.testclient import TestClient
+from geoalchemy2.shape import from_shape
+from shapely.geometry import shape
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -60,11 +62,12 @@ def road_network(db, customer):
     db.add(road_network)
     db.commit()
     db.refresh(road_network)
-
+    geometry_data = {"type": "LineString", "coordinates": [[0, 0], [1, 1]]}
+    geometry = from_shape(shape(geometry_data), srid=4326)
     edge = RoadEdge(
         network_id=road_network.id,
         properties={"name": "Test Road"},
-        geometry="LINESTRING(0 0, 1 1)",
+        geometry=geometry,
         is_current=True,
         valid_from="2025-01-01 10:30:00",
     )

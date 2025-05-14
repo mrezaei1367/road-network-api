@@ -1,6 +1,5 @@
 from geoalchemy2 import Geometry
 from sqlalchemy import (
-    JSON,
     TIMESTAMP,
     Boolean,
     Column,
@@ -9,6 +8,8 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.schema import Index
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -33,7 +34,7 @@ class RoadNetwork(Base):
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
     name = Column(String, nullable=False, index=True)
     version = Column(String, nullable=False)
-    upload_time = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    upload_time = Column(TIMESTAMP(timezone=True))
 
 
 class RoadEdge(Base):
@@ -43,7 +44,7 @@ class RoadEdge(Base):
     network_id = Column(
         Integer, ForeignKey("road_networks.id"), nullable=False, index=True
     )
-    properties = Column(JSON)
+    properties = Column(JSONB)
     geometry = Column(Geometry("LINESTRING", srid=4326))
     is_current = Column(Boolean, default=True)
     valid_from = Column(
